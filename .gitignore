@@ -1,0 +1,120 @@
+# ==========================================
+# ENVIRONMENT / SECRETS
+# ==========================================
+
+.env
+.env.*
+!.env.example
+
+# Credentials / generated passwords
+*.pem
+*.key
+secrets/
+credentials/
+*_credentials.json
+
+
+# ==========================================
+# PYTHON
+# ==========================================
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+.venv/
+venv/
+env/
+ENV/
+
+.pytest_cache/
+.mypy_cache/
+
+
+# ==========================================
+# R
+# ==========================================
+
+.Rhistory
+.RData
+.Ruserdata
+
+# RStudio
+.Rproj.user/
+
+# R package build files
+*.Rproj
+
+
+# ==========================================
+# AIRFLOW
+# ==========================================
+
+airflow/logs/*
+airflow/__pycache__/
+airflow/dags/__pycache__/
+airflow/plugins/__pycache__/
+
+# Airflow generated/local files
+airflow/airflow.db
+airflow/simple_auth_manager_passwords.json.generated
+
+
+# ==========================================
+# DOCKER / GENERATED DATA
+# ==========================================
+
+# Local data
+data/
+tmp/
+temp/
+
+# MinIO / database local volumes if mounted locally
+minio_data/
+postgres_data/
+
+# Generated JSON / CSV output
+*.json
+*.csv
+
+# BUT keep project configuration examples
+!api/*.json
+!sql/*.csv
+
+
+# ==========================================
+# STREAMLIT
+# ==========================================
+
+.streamlit/secrets.toml
+
+
+# ==========================================
+# OS
+# ==========================================
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+
+
+# ==========================================
+# IDE
+# ==========================================
+
+.vscode/
+.idea/
+
+*.swp
+*.swo
+
+
+# ==========================================
+# LOGS
+# ==========================================
+
+*.log
+logs/

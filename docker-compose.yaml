@@ -1,0 +1,295 @@
+services:
+
+  # ==========================================
+  # MARKETPLACE API
+  # ==========================================
+
+  api-marketplace:
+    image: python:3.12-slim
+    container_name: marketplace-api
+
+    working_dir: /app
+
+    environment:
+      API_TOKEN: ${MARKETPLACE_API_TOKEN}
+
+    volumes:
+      - ./api:/app
+
+    command: >
+      sh -c "
+      pip install --no-cache-dir flask &&
+      python app.py
+      "
+
+    ports:
+      - "5000:5000"
+
+    networks:
+      - marketplace-net
+
+
+  # ==========================================
+  # MINIO — BRONZE DATA LAKE
+  # ==========================================
+
+  minio:
+    image: minio/minio:latest
+    container_name: marketplace-minio
+
+    command: server /data --console-address ":9001"
+
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+    volumes:
+      - minio_data:/data
+
+    networks:
+      - marketplace-net
+
+
+  # ==========================================
+  # MINIO INITIALIZATION
+  # ==========================================
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: marketplace-minio-init
+
+    depends_on:
+      - minio
+
+    entrypoint: >
+      /bin/sh -c "
+      sleep 10;
+      mc alias set local http://minio:9000
+      ${MINIO_ROOT_USER}
+      ${MINIO_ROOT_PASSWORD};
+      mc mb --ignore-existing local/bronze;
+      exit 0;
+      "
+
+    networks:
+      - marketplace-net
+
+
+  # ==========================================
+  # POSTGRESQL — SILVER + GOLD
+  # ==========================================
+
+  postgres:
+    image: postgres:16
+    container_name: marketplace-postgres
+
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+      - ./sql/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+
+      - ./sql/silver_tables.sql:/docker-entrypoint-initdb.d/02_silver.sql
+
+      - ./sql/gold_tables.sql:/docker-entrypoint-initdb.d/03_gold.sql
+
+    networks:
+      - marketplace-net
+
+
+  # ==========================================
+  # AIRFLOW
+  # ==========================================
+
+  airflow:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    container_name: marketplace-airflow
+
+    depends_on:
+      - postgres
+      - minio
+      - api-marketplace
+
+    environment:
+
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB}
+
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+
+      AIRFLOW__CORE__HOSTNAME_CALLABLE: "socket.gethostname"
+
+      AIRFLOW_CONN_MARKETPLACE_API: http://:${MARKETPLACE_API_TOKEN}@api-marketplace:5000
+
+      AIRFLOW_UID: ${AIRFLOW_UID}
+      AIRFLOW_GID: ${AIRFLOW_GID}
+
+      PYTHONPATH: /opt/airflow/plugins:/opt/airflow/dags
+
+      # PostgreSQL
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+      # Marketplace API
+      MARKETPLACE_API_URL: http://api-marketplace:5000
+      MARKETPLACE_API_TOKEN: ${MARKETPLACE_API_TOKEN}
+
+      # MinIO
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: bronze
+
+      _PIP_ADDITIONAL_REQUIREMENTS: >
+        requests
+        boto3
+        psycopg2-binary
+
+    ports:
+      - "8080:8080"
+
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/plugins:/opt/airflow/plugins
+      - airflow_logs:/opt/airflow/logs
+      - ./r:/opt/airflow/r
+
+    command: standalone
+
+    networks:
+      - marketplace-net
+
+
+  # ==========================================
+  # RSTUDIO — R ANALYTICS
+  # ==========================================
+
+  rstudio:
+    image: rocker/rstudio:4.4.2
+    container_name: marketplace-rstudio
+
+    depends_on:
+      - postgres
+      - minio
+
+    environment:
+
+      # RStudio login
+      PASSWORD: ${RSTUDIO_PASSWORD}
+
+      # PostgreSQL
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+
+      # MinIO
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: bronze
+
+    ports:
+      - "8787:8787"
+
+    volumes:
+      - ./r:/home/rstudio/r
+
+    networks:
+      - marketplace-net
+
+
+  # ==========================================
+  # STREAMLIT — DASHBOARD
+  # ==========================================
+
+  streamlit:
+    image: python:3.12-slim
+    container_name: marketplace-streamlit
+
+    depends_on:
+      - postgres
+
+    working_dir: /app
+
+    environment:
+
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+
+    volumes:
+      - ./streamlit:/app
+
+    command: >
+      sh -c "
+      pip install --no-cache-dir -r requirements.txt &&
+      streamlit run app.py
+      --server.address=0.0.0.0
+      --server.port=8501
+      "
+
+    ports:
+      - "8501:8501"
+
+    networks:
+      - marketplace-net
+
+
+  # ==========================================
+  # ADMINER — POSTGRESQL INTERFACE
+  # ==========================================
+
+  adminer:
+    image: adminer:latest
+    container_name: marketplace-adminer
+
+    depends_on:
+      - postgres
+
+    ports:
+      - "8081:8080"
+
+    networks:
+      - marketplace-net
+
+
+# ==========================================
+# VOLUMES
+# ==========================================
+
+volumes:
+
+  minio_data:
+  postgres_data:
+  airflow_logs:
+
+
+# ==========================================
+# NETWORK
+# ==========================================
+
+networks:
+
+  marketplace-net:
+    driver: bridge
