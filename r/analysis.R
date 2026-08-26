@@ -265,13 +265,11 @@ cat("====================================\n")
 
 print(category_analysis)
 
-
 # ============================================================
 # 9. ANOMALY DETECTION
 # ============================================================
 
 # Calculate daily seller revenue over all available dates
-
 seller_daily <- orders %>%
 
   filter(
@@ -297,6 +295,10 @@ seller_daily <- orders %>%
   )
 
 
+# ------------------------------------------------------------
+# Calculate historical baseline
+# ------------------------------------------------------------
+
 seller_anomalies <- seller_daily %>%
 
   group_by(
@@ -305,24 +307,34 @@ seller_anomalies <- seller_daily %>%
 
   mutate(
 
+    # Average revenue from the PREVIOUS 7 days
+    # Current day is excluded from the baseline
     expected_value =
       slide_dbl(
-        revenue,
+        lag(revenue),
         mean,
         .before = 6,
         .complete = FALSE,
         na.rm = TRUE
       ),
 
+    # Anomaly threshold = 70% of expected revenue
     threshold =
       expected_value * 0.70,
 
+    # Revenue drop greater than 30%
     is_anomaly =
+      !is.na(expected_value) &
       revenue < threshold
+
   ) %>%
 
   ungroup()
 
+
+# ------------------------------------------------------------
+# Keep results for target date
+# ------------------------------------------------------------
 
 anomaly_results <- seller_anomalies %>%
 
@@ -353,6 +365,11 @@ anomaly_results <- seller_anomalies %>%
     is_anomaly
   )
 
+
+# ------------------------------------------------------------
+# Display anomaly results
+# ------------------------------------------------------------
+
 cat("\n")
 cat("====================================\n")
 cat("ANOMALY ANALYSIS\n")
@@ -360,7 +377,10 @@ cat("====================================\n")
 
 cat(
   "Anomalies detected:",
-  sum(anomaly_results$is_anomaly),
+  sum(
+    anomaly_results$is_anomaly,
+    na.rm = TRUE
+  ),
   "\n"
 )
 
