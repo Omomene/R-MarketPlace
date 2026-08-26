@@ -1,6 +1,6 @@
 # ============================================================
 # MARKETPLACE - SILVER -> GOLD
-# Statistical analysis and aggregation
+# Statistical analysis and business analytics
 # ============================================================
 
 library(DBI)
@@ -8,6 +8,7 @@ library(RPostgres)
 library(dplyr)
 library(lubridate)
 library(tidyr)
+library(slider)
 
 # ------------------------------------------------------------
 # 1. Parameters
@@ -21,7 +22,11 @@ target_date <- ifelse(
   as.character(Sys.Date())
 )
 
+cat("====================================\n")
+cat("MARKETPLACE R ANALYSIS\n")
 cat("Analysis for:", target_date, "\n")
+cat("====================================\n")
+
 
 # ------------------------------------------------------------
 # 2. PostgreSQL connection
@@ -30,27 +35,17 @@ cat("Analysis for:", target_date, "\n")
 con <- dbConnect(
   RPostgres::Postgres(),
   host = Sys.getenv("DB_HOST", "postgres"),
-  port = as.integer(
-    Sys.getenv("DB_PORT", "5432")
-  ),
-  dbname = Sys.getenv(
-    "DB_NAME",
-    "marketplace"
-  ),
-  user = Sys.getenv(
-    "DB_USER",
-    "app"
-  ),
-  password = Sys.getenv(
-    "DB_PASSWORD",
-    "app12345"
-  )
+  port = as.integer(Sys.getenv("DB_PORT", "5432")),
+  dbname = Sys.getenv("DB_NAME", "marketplace"),
+  user = Sys.getenv("DB_USER", "app"),
+  password = Sys.getenv("DB_PASSWORD", "app12345")
 )
 
 cat("Connected to PostgreSQL\n")
 
+
 # ------------------------------------------------------------
-# 3. Read Silver data
+# 3. Read Silver orders
 # ------------------------------------------------------------
 
 orders <- dbGetQuery(
@@ -61,7 +56,7 @@ orders <- dbGetQuery(
       seller_id,
       customer_id,
       product_id,
-      dt,
+      order_date,
       quantity,
       total_amount,
       status
@@ -69,194 +64,322 @@ orders <- dbGetQuery(
   "
 )
 
-orders$dt <- as.Date(orders$dt)
+orders$order_date <- as.Date(orders$order_date)
 
-cat(
-  "Silver rows:",
-  nrow(orders),
-  "\n"
-)
+cat("Silver rows:", nrow(orders), "\n")
 
 if (nrow(orders) == 0) {
   stop("Silver table is empty.")
 }
 
-# ------------------------------------------------------------
-# 4. Daily revenue
-# ------------------------------------------------------------
-
-daily_revenue <- orders %>%
-  group_by(dt) %>%
-  summarise(
-    total_orders = n_distinct(order_id),
-    revenue = sum(total_amount, na.rm = TRUE),
-    average_order_value =
-      mean(total_amount, na.rm = TRUE),
-    total_quantity =
-      sum(quantity, na.rm = TRUE),
-    .groups = "drop"
-  )
 
 # ------------------------------------------------------------
-# 5. Seller analysis
+# 4. Read Silver sellers
 # ------------------------------------------------------------
 
-seller_analysis <- orders %>%
+sellers <- dbGetQuery(
+  con,
+  "
+  SELECT
+      seller_id,
+      name AS seller_name
+  FROM silver.sellers
+  "
+)
 
-  group_by(
-    seller_id,
-    dt
+
+# ------------------------------------------------------------
+# 5. Read Silver products
+# ------------------------------------------------------------
+
+products <- dbGetQuery(
+  con,
+  "
+  SELECT
+      product_id,
+      name,
+      category,
+      base_price
+  FROM silver.products
+  "
+)
+
+
+# ============================================================
+# 6. REVENUE ANALYSIS
+# ============================================================
+
+revenue_analysis <- orders %>%
+
+  filter(
+    order_date == as.Date(target_date)
   ) %>%
 
   summarise(
-    orders = n_distinct(order_id),
-    revenue = sum(
-      total_amount,
-      na.rm = TRUE
-    ),
+
+    order_date = as.Date(target_date),
+
+    total_orders =
+      n_distinct(order_id),
+
+    total_revenue =
+      sum(
+        total_amount[status == "completed"],
+        na.rm = TRUE
+      ),
+
+    average_order_value =
+      mean(
+        total_amount[status == "completed"],
+        na.rm = TRUE
+      ),
+
+    # Marketplace commission = 10%
+    total_commission =
+      sum(
+        total_amount[status == "completed"],
+        na.rm = TRUE
+      ) * 0.10
+  )
+
+cat("\n")
+cat("====================================\n")
+cat("REVENUE ANALYSIS\n")
+cat("====================================\n")
+
+print(revenue_analysis)
+
+
+# ============================================================
+# 7. SELLER ANALYSIS
+# ============================================================
+
+seller_analysis <- orders %>%
+
+  filter(
+    order_date == as.Date(target_date),
+    status == "completed"
+  ) %>%
+
+  group_by(
+    seller_id,
+    order_date
+  ) %>%
+
+  summarise(
+
+    total_orders =
+      n_distinct(order_id),
+
+    revenue =
+      sum(
+        total_amount,
+        na.rm = TRUE
+      ),
+
     average_order_value =
       mean(
         total_amount,
         na.rm = TRUE
       ),
+
+    .groups = "drop"
+  ) %>%
+
+  left_join(
+    sellers,
+    by = "seller_id"
+  ) %>%
+
+  arrange(
+    desc(revenue)
+  ) %>%
+
+  mutate(
+    rank = row_number()
+  ) %>%
+
+  select(
+    seller_id,
+    seller_name,
+    order_date,
+    total_orders,
+    revenue,
+    average_order_value,
+    rank
+  )
+
+cat("\n")
+cat("====================================\n")
+cat("SELLER ANALYSIS\n")
+cat("====================================\n")
+
+print(seller_analysis)
+
+
+# ============================================================
+# 8. CATEGORY ANALYSIS
+# ============================================================
+
+category_analysis <- orders %>%
+
+  filter(
+    order_date == as.Date(target_date),
+    status == "completed"
+  ) %>%
+
+  left_join(
+    products,
+    by = "product_id"
+  ) %>%
+
+  group_by(
+    category,
+    order_date
+  ) %>%
+
+  summarise(
+
+    total_orders =
+      n_distinct(order_id),
+
+    revenue =
+      sum(
+        total_amount,
+        na.rm = TRUE
+      ),
+
+    average_order_value =
+      mean(
+        total_amount,
+        na.rm = TRUE
+      ),
+
+    .groups = "drop"
+  )
+
+cat("\n")
+cat("====================================\n")
+cat("CATEGORY ANALYSIS\n")
+cat("====================================\n")
+
+print(category_analysis)
+
+
+# ============================================================
+# 9. ANOMALY DETECTION
+# ============================================================
+
+# Calculate daily seller revenue over all available dates
+
+seller_daily <- orders %>%
+
+  filter(
+    status == "completed"
+  ) %>%
+
+  group_by(
+    seller_id,
+    order_date
+  ) %>%
+
+  summarise(
+    revenue = sum(
+      total_amount,
+      na.rm = TRUE
+    ),
     .groups = "drop"
   ) %>%
 
   arrange(
     seller_id,
-    dt
-  ) %>%
+    order_date
+  )
 
-  group_by(seller_id) %>%
+
+seller_anomalies <- seller_daily %>%
+
+  group_by(
+    seller_id
+  ) %>%
 
   mutate(
 
-    # Rolling 7-day average
-    avg_7d = slider::slide_dbl(
-      revenue,
-      mean,
-      .before = 6,
-      .complete = FALSE,
-      na.rm = TRUE
-    ),
+    expected_value =
+      slide_dbl(
+        revenue,
+        mean,
+        .before = 6,
+        .complete = FALSE,
+        na.rm = TRUE
+      ),
 
-    # Detect significant drop
-    drop_flag =
-      revenue < (0.70 * avg_7d)
+    threshold =
+      expected_value * 0.70,
 
+    is_anomaly =
+      revenue < threshold
   ) %>%
 
   ungroup()
 
-# ------------------------------------------------------------
-# 6. Category analysis
-# ------------------------------------------------------------
 
-# Product information is stored in Silver products
-# if available.
-
-products <- tryCatch(
-
-  dbGetQuery(
-    con,
-    "
-    SELECT
-        product_id,
-        name,
-        category,
-        base_price
-    FROM silver.products
-    "
-  ),
-
-  error = function(e) {
-
-    cat(
-      "silver.products not found. ",
-      "Category analysis skipped.\n"
-    )
-
-    NULL
-  }
-)
-
-category_analysis <- NULL
-
-if (!is.null(products)) {
-
-  category_analysis <- orders %>%
-
-    left_join(
-      products,
-      by = "product_id"
-    ) %>%
-
-    group_by(
-      dt,
-      category
-    ) %>%
-
-    summarise(
-      orders = n_distinct(order_id),
-      revenue =
-        sum(
-          total_amount,
-          na.rm = TRUE
-        ),
-      quantity =
-        sum(
-          quantity,
-          na.rm = TRUE
-        ),
-      .groups = "drop"
-    )
-}
-
-# ------------------------------------------------------------
-# 7. Anomaly detection
-# ------------------------------------------------------------
-
-anomalies <- seller_analysis %>%
+anomaly_results <- seller_anomalies %>%
 
   filter(
-    drop_flag == TRUE
+    order_date == as.Date(target_date)
   ) %>%
 
-  transmute(
-
-    seller_id,
-
-    dt,
+  mutate(
 
     metric =
       "seller_daily_revenue",
 
-    value =
-      revenue,
+    anomaly_type =
+      ifelse(
+        is_anomaly,
+        "Revenue drop",
+        "Normal"
+      )
+  ) %>%
 
-    threshold =
-      avg_7d * 0.70
+  select(
+    order_date,
+    metric,
+    value = revenue,
+    expected_value,
+    threshold,
+    anomaly_type,
+    is_anomaly
   )
+
+cat("\n")
+cat("====================================\n")
+cat("ANOMALY ANALYSIS\n")
+cat("====================================\n")
 
 cat(
   "Anomalies detected:",
-  nrow(anomalies),
+  sum(anomaly_results$is_anomaly),
   "\n"
 )
 
-# ------------------------------------------------------------
-# 8. Regression analysis
-# ------------------------------------------------------------
+print(anomaly_results)
 
-# Does quantity have an influence on revenue?
+
+# ============================================================
+# 10. REGRESSION
+# ============================================================
 
 regression_model <- lm(
   total_amount ~ quantity,
-  data = orders
+  data = orders %>%
+    filter(status == "completed")
 )
 
-regression_summary <-
-  summary(regression_model)
+regression_summary <- summary(
+  regression_model
+)
 
 cat("\n")
 cat("====================================\n")
@@ -265,15 +388,44 @@ cat("====================================\n")
 
 print(regression_summary)
 
-# ------------------------------------------------------------
-# 9. Statistical test
-# ------------------------------------------------------------
 
-# Compare revenue between low and high quantity orders
+# Prepare regression results
+
+coefficients <- coef(
+  regression_summary
+)
+
+regression_results <- data.frame(
+
+  variable =
+    rownames(coefficients),
+
+  coefficient =
+    coefficients[, 1],
+
+  p_value =
+    coefficients[, 4],
+
+  r_squared =
+    regression_summary$r.squared,
+
+  analysis_date =
+    as.Date(target_date)
+)
+
+
+# ============================================================
+# 11. T-TEST
+# ============================================================
 
 orders_test <- orders %>%
 
+  filter(
+    status == "completed"
+  ) %>%
+
   mutate(
+
     quantity_group =
       ifelse(
         quantity <= median(
@@ -284,6 +436,7 @@ orders_test <- orders %>%
         "High quantity"
       )
   )
+
 
 t_test <- t.test(
   total_amount ~ quantity_group,
@@ -297,153 +450,83 @@ cat("====================================\n")
 
 print(t_test)
 
-# ------------------------------------------------------------
-# 10. Create Gold schema
-# ------------------------------------------------------------
+
+# ============================================================
+# 12. CREATE GOLD SCHEMA
+# ============================================================
 
 dbExecute(
   con,
-  "
-  CREATE SCHEMA IF NOT EXISTS gold;
-  "
+  "CREATE SCHEMA IF NOT EXISTS gold"
 )
 
-# ------------------------------------------------------------
-# 11. Gold tables
-# ------------------------------------------------------------
+
+# ============================================================
+# 13. CREATE GOLD TABLES
+# ============================================================
 
 dbExecute(
   con,
   "
-  CREATE TABLE IF NOT EXISTS gold.daily_revenue (
-      dt DATE PRIMARY KEY,
+  CREATE TABLE IF NOT EXISTS gold.revenue_analysis (
+      order_date DATE PRIMARY KEY,
       total_orders INTEGER,
-      revenue NUMERIC,
-      average_order_value NUMERIC,
-      total_quantity INTEGER
-  );
+      total_revenue NUMERIC(12,2),
+      average_order_value NUMERIC(12,2),
+      total_commission NUMERIC(12,2)
+  )
   "
 )
+
 
 dbExecute(
   con,
   "
   CREATE TABLE IF NOT EXISTS gold.seller_analysis (
       seller_id TEXT,
-      dt DATE,
-      orders INTEGER,
-      revenue NUMERIC,
-      average_order_value NUMERIC,
-      avg_7d NUMERIC,
-      drop_flag BOOLEAN,
-      PRIMARY KEY (seller_id, dt)
-  );
+      seller_name TEXT,
+      order_date DATE,
+      total_orders INTEGER,
+      revenue NUMERIC(12,2),
+      average_order_value NUMERIC(12,2),
+      rank INTEGER,
+      PRIMARY KEY (seller_id, order_date)
+  )
   "
 )
+
 
 dbExecute(
   con,
   "
-  CREATE TABLE IF NOT EXISTS gold.anomalies (
-      seller_id TEXT,
-      dt DATE,
+  CREATE TABLE IF NOT EXISTS gold.category_analysis (
+      category TEXT,
+      order_date DATE,
+      total_orders INTEGER,
+      revenue NUMERIC(12,2),
+      average_order_value NUMERIC(12,2),
+      PRIMARY KEY (category, order_date)
+  )
+  "
+)
+
+
+dbExecute(
+  con,
+  "
+  CREATE TABLE IF NOT EXISTS gold.anomaly_results (
+      anomaly_id SERIAL PRIMARY KEY,
+      order_date DATE,
       metric TEXT,
-      value NUMERIC,
-      threshold NUMERIC
-  );
+      value NUMERIC(12,2),
+      expected_value NUMERIC(12,2),
+      threshold NUMERIC(12,2),
+      anomaly_type TEXT,
+      is_anomaly BOOLEAN
+  )
   "
 )
 
-# ------------------------------------------------------------
-# 12. Write daily revenue
-# ------------------------------------------------------------
-
-dbExecute(
-  con,
-  "DELETE FROM gold.daily_revenue WHERE dt = $1",
-  params = list(target_date)
-)
-
-daily_target <- daily_revenue %>%
-  filter(
-    dt == as.Date(target_date)
-  )
-
-if (nrow(daily_target) > 0) {
-
-  dbWriteTable(
-    con,
-    Id(
-      schema = "gold",
-      table = "daily_revenue"
-    ),
-    daily_target,
-    append = TRUE,
-    row.names = FALSE
-  )
-}
-
-# ------------------------------------------------------------
-# 13. Write seller analysis
-# ------------------------------------------------------------
-
-dbExecute(
-  con,
-  "DELETE FROM gold.seller_analysis WHERE dt = $1",
-  params = list(target_date)
-)
-
-seller_target <- seller_analysis %>%
-  filter(
-    dt == as.Date(target_date)
-  )
-
-if (nrow(seller_target) > 0) {
-
-  dbWriteTable(
-    con,
-    Id(
-      schema = "gold",
-      table = "seller_analysis"
-    ),
-    seller_target,
-    append = TRUE,
-    row.names = FALSE
-  )
-}
-
-# ------------------------------------------------------------
-# 14. Write anomalies
-# ------------------------------------------------------------
-
-dbExecute(
-  con,
-  "DELETE FROM gold.anomalies WHERE dt = $1",
-  params = list(target_date)
-)
-
-anomaly_target <- anomalies %>%
-  filter(
-    dt == as.Date(target_date)
-  )
-
-if (nrow(anomaly_target) > 0) {
-
-  dbWriteTable(
-    con,
-    Id(
-      schema = "gold",
-      table = "anomalies"
-    ),
-    anomaly_target,
-    append = TRUE,
-    row.names = FALSE
-  )
-}
-
-# ------------------------------------------------------------
-# 15. Save regression results
-# ------------------------------------------------------------
 
 dbExecute(
   con,
@@ -454,37 +537,115 @@ dbExecute(
       p_value NUMERIC,
       r_squared NUMERIC,
       analysis_date DATE
-  );
+  )
   "
 )
 
-coefficients <- coef(
-  regression_summary
+
+# ============================================================
+# 14. WRITE REVENUE ANALYSIS
+# ============================================================
+
+dbExecute(
+  con,
+  "DELETE FROM gold.revenue_analysis
+   WHERE order_date = $1",
+  params = list(target_date)
 )
 
-p_values <- coef(
-  regression_summary
-)[, 4]
+dbWriteTable(
+  con,
+  Id(
+    schema = "gold",
+    table = "revenue_analysis"
+  ),
+  revenue_analysis,
+  append = TRUE,
+  row.names = FALSE
+)
 
-regression_results <- data.frame(
 
-  variable =
-    rownames(
-      coef(regression_summary)
+# ============================================================
+# 15. WRITE SELLER ANALYSIS
+# ============================================================
+
+dbExecute(
+  con,
+  "DELETE FROM gold.seller_analysis
+   WHERE order_date = $1",
+  params = list(target_date)
+)
+
+if (nrow(seller_analysis) > 0) {
+
+  dbWriteTable(
+    con,
+    Id(
+      schema = "gold",
+      table = "seller_analysis"
     ),
+    seller_analysis,
+    append = TRUE,
+    row.names = FALSE
+  )
+}
 
-  coefficient =
-    coefficients[, 1],
 
-  p_value =
-    p_values,
+# ============================================================
+# 16. WRITE CATEGORY ANALYSIS
+# ============================================================
 
-  r_squared =
-    regression_summary$r.squared,
-
-  analysis_date =
-    as.Date(target_date)
+dbExecute(
+  con,
+  "DELETE FROM gold.category_analysis
+   WHERE order_date = $1",
+  params = list(target_date)
 )
+
+if (nrow(category_analysis) > 0) {
+
+  dbWriteTable(
+    con,
+    Id(
+      schema = "gold",
+      table = "category_analysis"
+    ),
+    category_analysis,
+    append = TRUE,
+    row.names = FALSE
+  )
+}
+
+
+# ============================================================
+# 17. WRITE ANOMALIES
+# ============================================================
+
+dbExecute(
+  con,
+  "DELETE FROM gold.anomaly_results
+   WHERE order_date = $1",
+  params = list(target_date)
+)
+
+if (nrow(anomaly_results) > 0) {
+
+  dbWriteTable(
+    con,
+    Id(
+      schema = "gold",
+      table = "anomaly_results"
+    ),
+    anomaly_results,
+    append = TRUE,
+    row.names = FALSE
+  )
+}
+
+
+# ============================================================
+# 18. WRITE REGRESSION RESULTS
+# ============================================================
 
 dbExecute(
   con,
@@ -504,9 +665,10 @@ dbWriteTable(
   row.names = FALSE
 )
 
-# ------------------------------------------------------------
-# 16. Finish
-# ------------------------------------------------------------
+
+# ============================================================
+# 19. FINISH
+# ============================================================
 
 dbDisconnect(con)
 

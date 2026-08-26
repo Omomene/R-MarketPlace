@@ -31,6 +31,7 @@ RUN R -e "install.packages(c( \
     'lubridate', \
     'ggplot2', \
     'readr', \
+    'aws.s3', \
     'slider' \
     ), repos='https://cloud.r-project.org')"
 

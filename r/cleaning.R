@@ -1,6 +1,10 @@
 # ============================================================
 # MARKETPLACE - BRONZE -> SILVER
-# Cleaning and transformation
+# Personne 3 : nettoyage, transformation, validation
+#
+# Lit l'objet UNIQUE déposé par le DAG (upload_to_minio) :
+#   marketplace/dt=<date>/data.json
+# contenant {date, orders, sellers, products, customers}
 # ============================================================
 
 library(DBI)
@@ -12,274 +16,208 @@ library(lubridate)
 library(aws.s3)
 
 # ------------------------------------------------------------
-# 1. Parameters
+# 1. Paramètres
 # ------------------------------------------------------------
 
 target_date <- ifelse(
   length(commandArgs(trailingOnly = TRUE)) > 0,
   commandArgs(trailingOnly = TRUE)[1],
-  Sys.Date()
+  as.character(Sys.Date())
 )
 
 cat("Cleaning data for:", target_date, "\n")
 
 # ------------------------------------------------------------
-# 2. Environment variables
+# 2. Variables d'environnement
 # ------------------------------------------------------------
 
-db_host <- Sys.getenv("DB_HOST", "postgres")
-db_port <- as.integer(Sys.getenv("DB_PORT", "5432"))
-db_name <- Sys.getenv("DB_NAME", "marketplace")
-db_user <- Sys.getenv("DB_USER", "app")
-db_password <- Sys.getenv("DB_PASSWORD", "app12345")
+db_host     <- Sys.getenv("DB_HOST", Sys.getenv("POSTGRES_HOST", "postgres"))
+db_port     <- as.integer(Sys.getenv("DB_PORT", Sys.getenv("POSTGRES_PORT", "5432")))
+db_name     <- Sys.getenv("DB_NAME", Sys.getenv("POSTGRES_DB", "marketplace"))
+db_user     <- Sys.getenv("DB_USER", Sys.getenv("POSTGRES_USER", "app"))
+db_password <- Sys.getenv("DB_PASSWORD", Sys.getenv("POSTGRES_PASSWORD", "app12345"))
 
-minio_endpoint <- Sys.getenv(
-  "MINIO_ENDPOINT",
-  "http://minio:9000"
-)
-
-minio_access_key <- Sys.getenv(
-  "MINIO_ACCESS_KEY",
-  "minio"
-)
-
-minio_secret_key <- Sys.getenv(
-  "MINIO_SECRET_KEY",
-  "minio12345"
-)
-
-minio_bucket <- Sys.getenv(
-  "MINIO_BUCKET",
-  "bronze"
-)
-
-# ------------------------------------------------------------
-# 3. PostgreSQL connection
-# ------------------------------------------------------------
-
-con <- dbConnect(
-  RPostgres::Postgres(),
-  host = db_host,
-  port = db_port,
-  dbname = db_name,
-  user = db_user,
-  password = db_password
-)
-
-cat("Connected to PostgreSQL\n")
-
-# ------------------------------------------------------------
-# 4. Configure MinIO
-# ------------------------------------------------------------
+minio_endpoint   <- Sys.getenv("MINIO_ENDPOINT", "http://minio:9000")
+minio_access_key <- Sys.getenv("MINIO_ACCESS_KEY", "minio")
+minio_secret_key <- Sys.getenv("MINIO_SECRET_KEY", "minio12345")
+minio_bucket     <- Sys.getenv("MINIO_BUCKET", "bronze")
 
 Sys.setenv(
   AWS_ACCESS_KEY_ID = minio_access_key,
-  AWS_SECRET_ACCESS_KEY = minio_secret_key
-)
-
-# MinIO is S3 compatible
-Sys.setenv(
+  AWS_SECRET_ACCESS_KEY = minio_secret_key,
   AWS_S3_ENDPOINT = minio_endpoint
 )
 
 # ------------------------------------------------------------
-# 5. Locate Bronze file
+# 3. Connexion PostgreSQL
 # ------------------------------------------------------------
 
-object_key <- paste0(
-  "orders/dt=",
-  target_date,
-  "/orders.json"
+con <- dbConnect(
+  RPostgres::Postgres(),
+  host = db_host, port = db_port, dbname = db_name,
+  user = db_user, password = db_password
 )
 
-cat("Reading Bronze object:", object_key, "\n")
+cat("Connected to PostgreSQL (", db_host, ":", db_port, "/", db_name, ")\n", sep = "")
 
 # ------------------------------------------------------------
-# 6. Download JSON from MinIO
+# 4. Lecture de l'objet Bronze unique
 # ------------------------------------------------------------
 
-temp_file <- tempfile(
-  pattern = "orders_",
-  fileext = ".json"
-)
+object_key <- paste0("marketplace/dt=", target_date, "/data.json")
+cat("Reading Bronze object:", object_key, "(bucket:", minio_bucket, ")\n")
+
+temp_file <- tempfile(fileext = ".json")
 
 tryCatch({
-
   save_object(
     object = object_key,
     bucket = minio_bucket,
     file = temp_file,
-    base_url = sub(
-      "https?://",
-      "",
-      minio_endpoint
-    )
+    base_url = sub("https?://", "", minio_endpoint),
+    region = "",          # évite "us-east-1.<base_url>" (spécifique AWS, pas MinIO)
+    use_https = FALSE     # MinIO tourne en HTTP simple dans ce docker-compose
   )
-
 }, error = function(e) {
-
-  stop(
-    paste(
-      "Unable to download Bronze data from MinIO:",
-      e$message
-    )
-  )
+  stop(paste("Impossible de lire", object_key, "depuis MinIO :", e$message))
 })
 
-# ------------------------------------------------------------
-# 7. Read JSON
-# ------------------------------------------------------------
+raw <- fromJSON(temp_file, flatten = TRUE)
+unlink(temp_file)
 
-raw_data <- fromJSON(
-  temp_file,
-  flatten = TRUE
-)
+orders_raw    <- as.data.frame(raw$orders)
+sellers_raw   <- as.data.frame(raw$sellers)
+products_raw  <- as.data.frame(raw$products)
+customers_raw <- as.data.frame(raw$customers)
 
-orders <- as.data.frame(raw_data)
-
-cat(
-  "Rows received:",
-  nrow(orders),
-  "\n"
-)
+cat("Orders:", nrow(orders_raw),
+    "| Sellers:", nrow(sellers_raw),
+    "| Products:", nrow(products_raw),
+    "| Customers:", nrow(customers_raw), "\n")
 
 # ------------------------------------------------------------
-# 8. Cleaning
+# 5. Nettoyage — orders
 # ------------------------------------------------------------
 
-orders_clean <- orders %>%
-
-  # Correct data types
+orders_clean <- orders_raw %>%
   mutate(
-    order_id = as.character(order_id),
-    seller_id = as.character(seller_id),
-    customer_id = as.character(customer_id),
-    product_id = as.character(product_id),
-
-    dt = as.Date(dt),
-
-    quantity = as.integer(quantity),
-
+    order_id     = as.character(order_id),
+    seller_id    = as.character(seller_id),
+    customer_id  = as.character(customer_id),
+    product_id   = as.character(product_id),
+    order_date   = as.Date(dt),          # la table silver.orders utilise "order_date", pas "dt"
+    quantity     = as.integer(quantity),
     total_amount = as.numeric(total_amount),
-
-    status = as.character(status)
+    status       = as.character(status)
   ) %>%
-
-  # Remove invalid records
+  select(order_id, seller_id, customer_id, product_id,
+         order_date, quantity, total_amount, status) %>%
   filter(
-    !is.na(order_id),
-    !is.na(seller_id),
-    !is.na(customer_id),
-    !is.na(product_id),
-    !is.na(dt),
-    !is.na(quantity),
-    !is.na(total_amount)
+    !is.na(order_id), !is.na(seller_id), !is.na(customer_id),
+    !is.na(product_id), !is.na(order_date), !is.na(quantity), !is.na(total_amount)
   ) %>%
+  filter(quantity > 0, total_amount >= 0) %>%
+  distinct(order_id, .keep_all = TRUE)
 
-  # Business rules
+cat("Orders after cleaning:", nrow(orders_clean), "\n")
+
+if (nrow(orders_clean) == 0) stop("No valid orders remain after cleaning.")
+if (nrow(filter(orders_clean, order_date > Sys.Date())) > 0) stop("Data contains future dates.")
+
+# ------------------------------------------------------------
+# 6. Nettoyage — sellers / products / customers
+# ------------------------------------------------------------
+
+sellers_clean <- sellers_raw %>%
+  mutate(
+    seller_id   = as.character(seller_id),
+    name        = trimws(name),
+    country     = trimws(country),
+    joined_date = as.Date(joined_date)
+  ) %>%
+  filter(!is.na(seller_id), !is.na(name), name != "") %>%
+  distinct(seller_id, .keep_all = TRUE)
+
+products_clean <- products_raw %>%
+  mutate(
+    product_id = as.character(product_id),
+    name       = trimws(name),
+    category   = trimws(category),
+    base_price = as.numeric(base_price)
+  ) %>%
+  filter(!is.na(product_id), !is.na(name), name != "") %>%
+  filter(is.na(base_price) | base_price >= 0) %>%
+  distinct(product_id, .keep_all = TRUE)
+
+customers_clean <- customers_raw %>%
+  mutate(
+    customer_id = as.character(customer_id),
+    email       = trimws(email),
+    city        = trimws(city),
+    signup_date = as.Date(signup_date)
+  ) %>%
+  filter(!is.na(customer_id)) %>%
+  distinct(customer_id, .keep_all = TRUE)
+
+cat("Sellers:", nrow(sellers_clean),
+    "| Products:", nrow(products_clean),
+    "| Customers:", nrow(customers_clean), "(après nettoyage)\n")
+
+# ------------------------------------------------------------
+# 7. Intégrité référentielle : orders -> dimensions connues
+# ------------------------------------------------------------
+
+before_fk <- nrow(orders_clean)
+
+orders_clean <- orders_clean %>%
   filter(
-    quantity > 0,
-    total_amount >= 0
-  ) %>%
-
-  # Prevent duplicate orders
-  distinct(
-    order_id,
-    .keep_all = TRUE
+    seller_id %in% sellers_clean$seller_id,
+    product_id %in% products_clean$product_id,
+    customer_id %in% customers_clean$customer_id
   )
 
-cat(
-  "Rows after cleaning:",
-  nrow(orders_clean),
-  "\n"
-)
-
-# ------------------------------------------------------------
-# 9. Data quality checks
-# ------------------------------------------------------------
-
-if (nrow(orders_clean) == 0) {
-  stop("No valid orders remain after cleaning.")
+if (nrow(orders_clean) < before_fk) {
+  cat("Orders exclus pour FK invalide:", before_fk - nrow(orders_clean), "\n")
 }
-
-future_dates <- orders_clean %>%
-  filter(dt > Sys.Date())
-
-if (nrow(future_dates) > 0) {
-  stop("Data contains future dates.")
-}
-
-missing_ids <- orders_clean %>%
-  filter(
-    is.na(order_id) |
-    is.na(seller_id) |
-    is.na(product_id)
-  )
-
-if (nrow(missing_ids) > 0) {
-  stop("Missing mandatory identifiers.")
-}
+if (nrow(orders_clean) == 0) stop("Plus aucune commande valide après contrôle FK.")
 
 # ------------------------------------------------------------
-# 10. Create Silver schema/table if necessary
+# 8. Schéma Silver (déjà créé par silver_tables.sql, sécurité)
 # ------------------------------------------------------------
 
-dbExecute(
-  con,
-  "
-  CREATE SCHEMA IF NOT EXISTS silver;
-  "
-)
-
-dbExecute(
-  con,
-  "
-  CREATE TABLE IF NOT EXISTS silver.orders (
-      order_id TEXT PRIMARY KEY,
-      seller_id TEXT NOT NULL,
-      customer_id TEXT NOT NULL,
-      product_id TEXT NOT NULL,
-      dt DATE NOT NULL,
-      quantity INTEGER NOT NULL,
-      total_amount NUMERIC NOT NULL,
-      status TEXT
-  );
-  "
-)
+dbExecute(con, "CREATE SCHEMA IF NOT EXISTS silver;")
 
 # ------------------------------------------------------------
-# 11. Idempotent Silver load
+# 9. Chargement idempotent
 # ------------------------------------------------------------
 
-dbExecute(
-  con,
-  "DELETE FROM silver.orders WHERE dt = $1",
-  params = list(target_date)
-)
+# orders : partitionné par order_date -> DELETE + INSERT
+dbExecute(con, "DELETE FROM silver.orders WHERE order_date = $1", params = list(target_date))
+dbWriteTable(con, Id(schema = "silver", table = "orders"),
+             orders_clean, append = TRUE, row.names = FALSE)
 
-dbWriteTable(
-  con,
-  Id(
-    schema = "silver",
-    table = "orders"
-  ),
-  orders_clean,
-  append = TRUE,
-  row.names = FALSE
-)
+# sellers / products / customers : dimensions complètes -> TRUNCATE + INSERT
+dbExecute(con, "TRUNCATE TABLE silver.sellers CASCADE")
+dbWriteTable(con, Id(schema = "silver", table = "sellers"),
+             sellers_clean, append = TRUE, row.names = FALSE)
 
-cat(
-  "Silver load completed:",
-  nrow(orders_clean),
-  "rows\n"
-)
+dbExecute(con, "TRUNCATE TABLE silver.products CASCADE")
+dbWriteTable(con, Id(schema = "silver", table = "products"),
+             products_clean, append = TRUE, row.names = FALSE)
+
+dbExecute(con, "TRUNCATE TABLE silver.customers CASCADE")
+dbWriteTable(con, Id(schema = "silver", table = "customers"),
+             customers_clean, append = TRUE, row.names = FALSE)
+
+cat("Silver load completed:", nrow(orders_clean), "orders,",
+    nrow(sellers_clean), "sellers,",
+    nrow(products_clean), "products,",
+    nrow(customers_clean), "customers\n")
 
 # ------------------------------------------------------------
-# 12. Close connection
+# 10. Fin
 # ------------------------------------------------------------
 
 dbDisconnect(con)
-
-unlink(temp_file)
 
 cat("Cleaning completed successfully.\n")
