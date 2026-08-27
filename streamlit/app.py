@@ -1,1114 +1,804 @@
-import os
-
 import pandas as pd
-import psycopg2
 import streamlit as st
-import plotly.express as px
+import altair as alt
 
-
-# ============================================================
-# CONFIGURATION
-# ============================================================
+from queries import (
+    get_customer_anomalies,
+    get_kpi_country,
+    get_kpi_monthly,
+    get_model_coefficients,
+    get_model_metrics,
+    get_transactions,
+)
 
 st.set_page_config(
     page_title="Marketplace Analytics",
-    page_icon="📊",
+    page_icon="🛍️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
-
-# ============================================================
-# THEME
-# ============================================================
-
-PRIMARY = "#1F3A5F"
-SECONDARY = "#2E5EAA"
-ACCENT = "#4C9AFF"
-LIGHT_BLUE = "#EAF2FB"
-DARK = "#172B4D"
-GREY = "#6B778C"
-LIGHT_GREY = "#F4F6F8"
-GREEN = "#2E8B57"
-RED = "#C94C4C"
-ORANGE = "#D98C00"
-
-# ============================================================
-# CUSTOM CSS
-# ============================================================
-
 st.markdown(
-    f"""
+    '''
     <style>
+    .block-container {
+        padding-top: 4.15rem !important;
+        padding-bottom: 0.65rem !important;
+        padding-left: 1.3rem !important;
+        padding-right: 1.3rem !important;
+        max-width: 1500px !important;
+    }
 
-    /* ================================
-       GLOBAL
-    ================================= */
+    section[data-testid="stSidebar"] {
+        width: 205px !important;
+        min-width: 205px !important;
+        background: #f3f6fb;
+        border-right: 1px solid #e1e6ef;
+    }
 
-    .block-container {{
-        padding-top: 1.5rem;
-        padding-bottom: 2rem;
-        max-width: 1500px;
-    }}
+    section[data-testid="stSidebar"] > div {
+        padding-top: 3.1rem !important;
+        padding-left: 0.85rem !important;
+        padding-right: 0.85rem !important;
+    }
 
-    body {{
-        background-color: #F7F9FC;
-    }}
+    section[data-testid="stSidebar"] h2 {
+        font-size: 1.05rem !important;
+        margin: 0 0 0.65rem 0 !important;
+    }
 
-    /* ================================
-       HEADER
-    ================================= */
+    section[data-testid="stSidebar"] label {
+        font-size: 0.76rem !important;
+    }
 
-    .dashboard-header {{
-        background: linear-gradient(
-            135deg,
-            {PRIMARY},
-            {SECONDARY}
-        );
+    section[data-testid="stSidebar"] input,
+    section[data-testid="stSidebar"] [data-baseweb="select"] {
+        font-size: 0.76rem !important;
+    }
 
-        padding: 24px 30px;
-        border-radius: 14px;
+    .marketplace-header {
+        width: 100%;
+        text-align: center;
+        margin: 0 0 0.55rem 0;
+        padding: 0.20rem 0 0.30rem 0.05rem;
+    }
 
-        color: white;
+    .marketplace-title {
+        display: inline-block;
+        font-size: 1.48rem;
+        line-height: 1.15;
+        font-weight: 800;
+        color: #1d2638;
+        padding: 0 0 0.10rem 0;
+        border-bottom: 3px solid #4f86ef;
+    }
 
-        margin-bottom: 22px;
+    .marketplace-subtitle {
+        margin-top: 0.20rem;
+        color: #7a8394;
+        font-size: 0.70rem;
+    }
 
-        box-shadow:
-            0 4px 12px rgba(31, 58, 95, 0.15);
-    }}
-
-    .dashboard-header h1 {{
-        color: white;
-        font-size: 34px;
+    .trend-chart-title {
+        font-size: 0.88rem;
         font-weight: 700;
-        margin: 0;
-    }}
+        color: #2d3444;
+        margin: 0.15rem 0 0.30rem 0;
+        line-height: 1.2;
+    }
 
-    .dashboard-header p {{
-        color: #E8EEF7;
-        font-size: 15px;
-        margin-top: 6px;
-        margin-bottom: 0;
-    }}
-
-    /* ================================
-       SECTION TITLES
-    ================================= */
-
-    .section-title {{
-        color: {DARK};
-        font-size: 21px;
+    .lower-chart-title {
+        font-size: 0.84rem;
         font-weight: 700;
-        margin-top: 8px;
-        margin-bottom: 12px;
-    }}
+        color: #2d3444;
+        margin: 0.45rem 0 0.35rem 0;
+        line-height: 1.2;
+    }
 
-    /* ================================
-       KPI CARDS
-    ================================= */
+    div[data-testid="stMetric"] {
+        background: #ffffff !important;
+        border: 1px solid #dfe4ec !important;
+        border-radius: 12px !important;
+        padding: 0.46rem 0.68rem !important;
+        min-height: 72px !important;
+        box-shadow: 0 4px 12px rgba(20, 40, 80, 0.09) !important;
+    }
 
-    .kpi-card {{
-        background: white;
-        border-radius: 12px;
-        padding: 18px 20px;
-        min-height: 110px;
-        border: 1px solid #E6EAF0;
+    div[data-testid="stMetricLabel"] {
+        font-size: 0.70rem !important;
+    }
 
-        box-shadow:
-            0 2px 8px rgba(0, 0, 0, 0.04);
-    }}
+    div[data-testid="stMetricValue"] {
+        font-size: 1.20rem !important;
+        font-weight: 750 !important;
+    }
 
-    .kpi-label {{
-        color: {GREY};
-        font-size: 14px;
-        font-weight: 500;
-        margin-bottom: 8px;
-    }}
+    button[data-baseweb="tab"] {
+        font-size: 0.76rem !important;
+        padding-left: 0.45rem !important;
+        padding-right: 0.45rem !important;
+    }
 
-    .kpi-value {{
-        color: {DARK};
-        font-size: 27px;
-        font-weight: 700;
-    }}
+    h2 { font-size: 1.02rem !important; }
+    h3 { font-size: 0.91rem !important; }
+    h4 {
+        font-size: 0.82rem !important;
+        margin-top: 0.1rem !important;
+        margin-bottom: 0.28rem !important;
+    }
 
-    .kpi-subtitle {{
-        color: #8A94A6;
-        font-size: 12px;
-        margin-top: 4px;
-    }}
+    p, .stMarkdown {
+        font-size: 0.79rem !important;
+    }
 
-    /* ================================
-       CHART CARDS
-    ================================= */
+    div[data-testid="stVerticalBlock"] {
+        gap: 0.42rem !important;
+    }
 
-    .chart-card {{
-        background: white;
-        border-radius: 12px;
-        padding: 12px 14px 4px 14px;
-        border: 1px solid #E6EAF0;
-
-        box-shadow:
-            0 2px 8px rgba(0, 0, 0, 0.035);
-    }}
-
-    /* ================================
-       STATUS CARDS
-    ================================= */
-
-    .success-card {{
-        background: #F0F8F3;
-        border: 1px solid #C8E6D2;
-        border-left: 5px solid {GREEN};
-        border-radius: 10px;
-        padding: 15px 18px;
-        color: #246B45;
-        font-weight: 500;
-    }}
-
-    .warning-card {{
-        background: #FFF8E8;
-        border: 1px solid #F2D38A;
-        border-left: 5px solid {ORANGE};
-        border-radius: 10px;
-        padding: 15px 18px;
-        color: #795600;
-        font-weight: 500;
-    }}
-
-    /* ================================
-       SIDEBAR
-    ================================= */
-
-    section[data-testid="stSidebar"] {{
-        background-color: #F7F9FC;
-    }}
-
-    section[data-testid="stSidebar"] h2 {{
-        color: {DARK};
-    }}
-
-    /* ================================
-       TABLES
-    ================================= */
-
-    div[data-testid="stDataFrame"] {{
-        border-radius: 10px;
+    div[data-testid="stDataFrame"] {
+        border: 1px solid #e0e5ed;
+        border-radius: 9px;
         overflow: hidden;
-    }}
+    }
 
-    /* ================================
-       DIVIDERS
-    ================================= */
-
-    hr {{
-        border: none;
-        border-top: 1px solid #E5E9EF;
-        margin-top: 22px;
-        margin-bottom: 22px;
-    }}
-
+    .dashboard-footer {
+        text-align: center;
+        color: #8a92a1;
+        font-size: 0.68rem;
+        padding-top: 0.35rem;
+    }
     </style>
-    """,
-    unsafe_allow_html=True
+    ''',
+    unsafe_allow_html=True,
 )
-
-# ============================================================
-# HEADER
-# ============================================================
 
 st.markdown(
-    '<div class="dashboard-header">'
-    '<h1>Marketplace Analytics</h1>'
-    '<p>Analyse des ventes, vendeurs, catégories et anomalies</p>'
-    '</div>',
-    unsafe_allow_html=True
+    '''
+    <div class="marketplace-header">
+        <div class="marketplace-title">🛍️ Marketplace Analytics</div>
+        <div class="marketplace-subtitle">
+            Analyse des ventes, vendeurs et anomalies
+        </div>
+    </div>
+    ''',
+    unsafe_allow_html=True,
 )
-
-
-# ============================================================
-# DATABASE CONNECTION
-# ============================================================
-
-@st.cache_resource
-def get_connection():
-
-    return psycopg2.connect(
-        host=os.getenv("DB_HOST", "postgres"),
-        port=os.getenv("DB_PORT", "5432"),
-        database=os.getenv("DB_NAME", "marketplace"),
-        user=os.getenv("DB_USER", "app"),
-        password=os.getenv("DB_PASSWORD", "app12345")
-    )
-
-
-def load_data(query):
-
-    conn = get_connection()
-
-    return pd.read_sql_query(
-        query,
-        conn
-    )
-
-
-# ============================================================
-# DATABASE CHECK
-# ============================================================
 
 try:
-
-    conn = get_connection()
-
-except Exception as e:
-
-    st.error(
-        "Impossible de se connecter à PostgreSQL."
-    )
-
-    st.exception(e)
-
+    transactions = get_transactions()
+    kpi_monthly = get_kpi_monthly()
+    kpi_country = get_kpi_country()
+    anomalies = get_customer_anomalies()
+    model_coefficients = get_model_coefficients()
+    model_metrics = get_model_metrics()
+except Exception as exc:
+    st.error("Impossible de charger les données réelles depuis PostgreSQL.")
+    st.exception(exc)
     st.stop()
 
-
-# ============================================================
-# LOAD GOLD DATA
-# ============================================================
-
-revenue_analysis = load_data(
-    """
-    SELECT
-        order_date,
-        total_orders,
-        total_revenue,
-        average_order_value,
-        total_commission
-    FROM gold.revenue_analysis
-    ORDER BY order_date
-    """
-)
-
-
-seller_analysis = load_data(
-    """
-    SELECT
-        seller_id,
-        seller_name,
-        order_date,
-        total_orders,
-        revenue,
-        average_order_value,
-        rank
-    FROM gold.seller_analysis
-    ORDER BY order_date
-    """
-)
-
-
-category_analysis = load_data(
-    """
-    SELECT
-        category,
-        order_date,
-        total_orders,
-        revenue,
-        average_order_value
-    FROM gold.category_analysis
-    ORDER BY order_date
-    """
-)
-
-
-anomaly_results = load_data(
-    """
-    SELECT
-        anomaly_id,
-        order_date,
-        metric,
-        value,
-        expected_value,
-        threshold,
-        anomaly_type,
-        is_anomaly
-    FROM gold.anomaly_results
-    ORDER BY order_date DESC
-    """
-)
-
-
-# ============================================================
-# CHECK DATA
-# ============================================================
-
-if revenue_analysis.empty:
-
-    st.warning(
-        "Aucune donnée disponible dans PostgreSQL Gold."
-    )
-
-    st.info(
-        "Lancez d'abord le pipeline Airflow."
-    )
-
+if transactions.empty:
+    st.warning("La table silver.orders ne contient aucune donnée.")
     st.stop()
 
+if "invoice_date" not in transactions.columns:
+    st.error("Les données Silver ne contiennent pas la date attendue.")
+    st.stop()
 
-# ============================================================
-# DATE CONVERSION
-# ============================================================
+transactions["invoice_date"] = pd.to_datetime(transactions["invoice_date"], errors="coerce")
+transactions = transactions.dropna(subset=["invoice_date"]).copy()
 
-revenue_analysis["order_date"] = pd.to_datetime(
-    revenue_analysis["order_date"]
-)
+transactions["transaction_amount"] = pd.to_numeric(
+    transactions["transaction_amount"], errors="coerce"
+).fillna(0)
 
-seller_analysis["order_date"] = pd.to_datetime(
-    seller_analysis["order_date"]
-)
+transactions["quantity"] = pd.to_numeric(
+    transactions.get("quantity", 0), errors="coerce"
+).fillna(0)
 
-category_analysis["order_date"] = pd.to_datetime(
-    category_analysis["order_date"]
-)
+min_date = transactions["invoice_date"].min().date()
+max_date = transactions["invoice_date"].max().date()
 
-anomaly_results["order_date"] = pd.to_datetime(
-    anomaly_results["order_date"]
-)
+st.sidebar.markdown("## Filtres")
 
-
-# ============================================================
-# SIDEBAR
-# ============================================================
-
-st.sidebar.markdown(
-    "## Filtres"
-)
-
-st.sidebar.markdown(
-    "Sélectionnez la période d'analyse."
-)
-
-min_date = revenue_analysis["order_date"].min().date()
-max_date = revenue_analysis["order_date"].max().date()
-
-
-selected_dates = st.sidebar.date_input(
-    "Période",
-    value=(min_date, max_date),
+start_date = st.sidebar.date_input(
+    "Date de début",
+    value=min_date,
     min_value=min_date,
-    max_value=max_date
+    max_value=max_date,
 )
 
-
-if len(selected_dates) == 2:
-
-    start_date = pd.Timestamp(
-        selected_dates[0]
-    )
-
-    end_date = (
-        pd.Timestamp(selected_dates[1])
-        + pd.Timedelta(days=1)
-        - pd.Timedelta(seconds=1)
-    )
-
-else:
-
-    start_date = pd.Timestamp(min_date)
-
-    end_date = (
-        pd.Timestamp(max_date)
-        + pd.Timedelta(days=1)
-        - pd.Timedelta(seconds=1)
-    )
-
-
-st.sidebar.divider()
-
-st.sidebar.caption(
-    f"Données disponibles : "
-    f"{min_date.strftime('%d/%m/%Y')} → "
-    f"{max_date.strftime('%d/%m/%Y')}"
+end_date = st.sidebar.date_input(
+    "Date de fin",
+    value=max_date,
+    min_value=min_date,
+    max_value=max_date,
 )
 
+if start_date > end_date:
+    st.sidebar.error("La date de début doit être avant la date de fin.")
+    st.stop()
 
-# ============================================================
-# FILTER DATA
-# ============================================================
-
-filtered_revenue = revenue_analysis[
-    (revenue_analysis["order_date"] >= start_date)
-    &
-    (revenue_analysis["order_date"] <= end_date)
-]
-
-
-filtered_sellers = seller_analysis[
-    (seller_analysis["order_date"] >= start_date)
-    &
-    (seller_analysis["order_date"] <= end_date)
-]
-
-
-filtered_categories = category_analysis[
-    (category_analysis["order_date"] >= start_date)
-    &
-    (category_analysis["order_date"] <= end_date)
-]
-
-
-filtered_anomalies = anomaly_results[
-    (anomaly_results["order_date"] >= start_date)
-    &
-    (anomaly_results["order_date"] <= end_date)
-    &
-    (anomaly_results["is_anomaly"] == True)
-]
-
-
-# ============================================================
-# KPI CALCULATIONS
-# ============================================================
-
-total_revenue = filtered_revenue[
-    "total_revenue"
-].sum()
-
-
-total_orders = filtered_revenue[
-    "total_orders"
-].sum()
-
-
-average_order_value = (
-    total_revenue / total_orders
-    if total_orders > 0
-    else 0
-)
-
-
-total_commission = filtered_revenue[
-    "total_commission"
-].sum()
-
-
-number_anomalies = len(
-    filtered_anomalies
-)
-
-
-# ============================================================
-# KPI SECTION
-# ============================================================
-
-st.markdown(
-    '<div class="section-title">Vue d’ensemble</div>',
-    unsafe_allow_html=True
-)
-
-col1, col2, col3, col4 = st.columns(4)
-
-
-# ============================================================
-# KPI 1 — REVENUE
-# ============================================================
-
-with col1:
-
-    st.markdown(
-        f'<div class="kpi-card">'
-        f'<div class="kpi-label">Chiffre d\'affaires</div>'
-        f'<div class="kpi-value">{total_revenue:,.2f} €</div>'
-        f'<div class="kpi-subtitle">Revenus sur la période</div>'
-        f'</div>',
-        unsafe_allow_html=True
+category_options = ["Toutes"]
+if "category" in transactions.columns:
+    category_options += sorted(
+        transactions["category"].dropna().astype(str).unique().tolist()
     )
 
+selected_category = st.sidebar.selectbox("Catégorie", category_options)
 
-# ============================================================
-# KPI 2 — ORDERS
-# ============================================================
-
-with col2:
-
-    st.markdown(
-        f'<div class="kpi-card">'
-        f'<div class="kpi-label">Commandes</div>'
-        f'<div class="kpi-value">{total_orders:,}</div>'
-        f'<div class="kpi-subtitle">Commandes traitées</div>'
-        f'</div>',
-        unsafe_allow_html=True
+seller_options = ["Tous les vendeurs"]
+if "seller_id" in transactions.columns:
+    seller_options += sorted(
+        transactions["seller_id"].dropna().astype(str).unique().tolist()
     )
 
+selected_seller = st.sidebar.selectbox("Vendeur", seller_options)
 
-# ============================================================
-# KPI 3 — AVERAGE ORDER VALUE
-# ============================================================
+filtered = transactions[
+    (transactions["invoice_date"].dt.date >= start_date)
+    & (transactions["invoice_date"].dt.date <= end_date)
+].copy()
 
-with col3:
+if selected_category != "Toutes" and "category" in filtered.columns:
+    filtered = filtered[
+        filtered["category"].astype(str) == selected_category
+    ]
 
-    st.markdown(
-        f'<div class="kpi-card">'
-        f'<div class="kpi-label">Panier moyen</div>'
-        f'<div class="kpi-value">{average_order_value:,.2f} €</div>'
-        f'<div class="kpi-subtitle">Valeur moyenne par commande</div>'
-        f'</div>',
-        unsafe_allow_html=True
-    )
+if selected_seller != "Tous les vendeurs" and "seller_id" in filtered.columns:
+    filtered = filtered[
+        filtered["seller_id"].astype(str) == selected_seller
+    ]
 
+total_revenue = float(filtered["transaction_amount"].sum())
+total_orders = int(filtered["invoice"].nunique()) if "invoice" in filtered.columns else int(len(filtered))
+average_order_value = total_revenue / total_orders if total_orders else 0.0
+active_sellers = int(filtered["seller_id"].nunique()) if "seller_id" in filtered.columns else 0
 
-# ============================================================
-# KPI 4 — ANOMALIES
-# ============================================================
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Chiffre d'affaires", f"{total_revenue:,.0f} €")
+c2.metric("Commandes", f"{total_orders:,}")
+c3.metric("Panier moyen", f"{average_order_value:,.2f} €")
+c4.metric("Vendeurs actifs", f"{active_sellers:,}")
 
-with col4:
-
-    anomaly_color = RED if number_anomalies > 0 else GREEN
-
-    st.markdown(
-        f'<div class="kpi-card">'
-        f'<div class="kpi-label">Anomalies</div>'
-        f'<div class="kpi-value" style="color:{anomaly_color};">'
-        f'{number_anomalies}'
-        f'</div>'
-        f'<div class="kpi-subtitle">Anomalies détectées</div>'
-        f'</div>',
-        unsafe_allow_html=True
-    )
-
-
-# ============================================================
-# DAILY EVOLUTION
-# ============================================================
-
-st.divider()
-
-st.markdown(
-    '<div class="section-title">Évolution quotidienne</div>',
-    unsafe_allow_html=True
-)
-
-
-# Force exactly one row per calendar day
-daily_chart = (
-    filtered_revenue
-    .assign(
-        order_date=lambda df:
-            df["order_date"].dt.normalize()
-    )
-    .groupby(
-        "order_date",
-        as_index=False
-    )
+daily = (
+    filtered.assign(dt=filtered["invoice_date"].dt.floor("D"))
+    .groupby("dt", as_index=False)
     .agg(
-        total_revenue=(
-            "total_revenue",
-            "sum"
-        ),
+        revenue=("transaction_amount", "sum"),
+        total_orders=("invoice", "nunique"),
+    )
+    .sort_values("dt")
+)
 
-        total_orders=(
-            "total_orders",
-            "sum"
-        ),
+category_df = pd.DataFrame()
+if "category" in filtered.columns:
+    category_df = (
+        filtered.assign(category=filtered["category"].fillna("Autres"))
+        .groupby("category", as_index=False)
+        .agg(revenue=("transaction_amount", "sum"))
+        .sort_values("revenue", ascending=False)
+    )
 
-        total_commission=(
-            "total_commission",
-            "sum"
+seller_df = pd.DataFrame()
+if "seller_id" in filtered.columns:
+    seller_df = (
+        filtered.groupby("seller_id", as_index=False)
+        .agg(
+            revenue=("transaction_amount", "sum"),
+            orders=("invoice", "nunique"),
+        )
+        .sort_values("revenue", ascending=False)
+    )
+
+status_df = pd.DataFrame()
+if "status" in filtered.columns:
+    status_work = filtered[["invoice", "status"]].copy()
+
+    def map_status(value):
+        value = str(value).strip().lower()
+        if value in {
+            "cancelled", "canceled", "annulée", "annulee",
+            "cancel", "refunded", "rejected"
+        }:
+            return "Commandes annulées"
+        return "Commandes validées"
+
+    status_work["status_group"] = status_work["status"].apply(map_status)
+    status_df = (
+        status_work.groupby("status_group", as_index=False)
+        .agg(orders=("invoice", "nunique"))
+    )
+
+def line_chart(df, x, y, title, y_title):
+    if df.empty:
+        st.info("Aucune donnée disponible.")
+        return
+
+    st.markdown(
+        f'<div class="trend-chart-title">{title}</div>',
+        unsafe_allow_html=True,
+    )
+
+    chart = (
+        alt.Chart(df)
+        .mark_line(strokeWidth=2.25, color="#1474d4")
+        .encode(
+            x=alt.X(
+                f"{x}:T",
+                title=None,
+                axis=alt.Axis(
+                    format="%d %b",
+                    labelAngle=0,
+                    tickCount=7,
+                    labelFontSize=10,
+                ),
+            ),
+            y=alt.Y(
+                f"{y}:Q",
+                title=y_title,
+                axis=alt.Axis(labelFontSize=10, titleFontSize=11),
+                scale=alt.Scale(zero=True),
+            ),
+            tooltip=[
+                alt.Tooltip(f"{x}:T", title="Date", format="%d/%m/%Y"),
+                alt.Tooltip(f"{y}:Q", title=y_title, format=",.2f"),
+            ],
+        )
+        .properties(height=220)
+        .configure_view(strokeOpacity=0)
+        .configure_axis(gridColor="#e5eaf2")
+    )
+
+    st.altair_chart(chart, use_container_width=True)
+
+def donut_chart(df, names, values, title):
+    if df.empty:
+        st.info("Aucune donnée disponible.")
+        return
+
+    work = df.copy()
+    work[values] = pd.to_numeric(work[values], errors="coerce").fillna(0)
+
+    total = work[values].sum()
+    if total > 0:
+        work["percentage"] = work[values] / total * 100
+    else:
+        work["percentage"] = 0
+
+    base = alt.Chart(work).encode(
+        theta=alt.Theta(
+            f"{values}:Q",
+            stack=True,
+        ),
+        color=alt.Color(
+            f"{names}:N",
+            legend=alt.Legend(
+                title=None,
+                orient="right",
+                labelFontSize=9,
+            ),
+        ),
+        tooltip=[
+            alt.Tooltip(f"{names}:N", title=""),
+            alt.Tooltip(f"{values}:Q", title="Valeur", format=",.2f"),
+            alt.Tooltip("percentage:Q", title="Part", format=".1f"),
+        ],
+    )
+
+    arcs = base.mark_arc(
+        innerRadius=35,
+        outerRadius=58,
+    )
+
+    labels = base.mark_text(
+        radius=47,
+        size=9,
+        fontWeight="bold",
+        color="#1f2937",
+    ).encode(
+        text=alt.Text(
+            "percentage:Q",
+            format=".1f"
         )
     )
-    .sort_values(
-        "order_date"
-    )
-)
 
-
-def create_line_chart(
-    dataframe,
-    y_column,
-    title,
-    y_format
-):
-
-    fig = px.line(
-        dataframe,
-        x="order_date",
-        y=y_column,
-        markers=True
+    chart = (
+        (arcs + labels)
+        .properties(
+            height=145,
+        )
+        .configure_view(strokeOpacity=0)
     )
 
-    fig.update_layout(
-        height=230,
+    st.altair_chart(
+        chart,
+        use_container_width=True,
+    )
 
-        title=dict(
-            text=title,
-            font=dict(
-                size=15,
-                color=DARK
+def seller_bar_chart(df):
+    if df.empty:
+        st.info("Aucune donnée disponible.")
+        return
+
+    top = df.head(5).copy()
+    top["revenue"] = pd.to_numeric(
+        top["revenue"], errors="coerce"
+    ).fillna(0)
+
+    bars = (
+        alt.Chart(top)
+        .mark_bar(
+            cornerRadiusEnd=3,
+            color="#2f6fed",
+        )
+        .encode(
+            y=alt.Y(
+                "seller_id:N",
+                sort="-x",
+                title=None,
+                axis=alt.Axis(labelFontSize=9),
             ),
-            x=0
-        ),
-
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-
-        font=dict(
-            family="Arial",
-            color=DARK
-        ),
-
-        margin=dict(
-            l=10,
-            r=10,
-            t=45,
-            b=10
-        ),
-
-        xaxis=dict(
-            title=None,
-            type="date",
-            tickformat="%d/%m",
-            showgrid=False
-        ),
-
-        yaxis=dict(
-            title=None,
-            tickformat=y_format,
-            showgrid=True,
-            gridcolor="#EAECEF",
-            zeroline=False
-        ),
-
-        hovermode="x unified"
+            x=alt.X(
+                "revenue:Q",
+                title="CA (€)",
+                axis=alt.Axis(labelFontSize=9, format="~s"),
+            ),
+            tooltip=[
+                alt.Tooltip("seller_id:N", title="Vendeur"),
+                alt.Tooltip("revenue:Q", title="CA", format=",.2f"),
+                alt.Tooltip("orders:Q", title="Commandes"),
+            ],
+        )
     )
 
-    return fig
-
-
-col1, col2, col3 = st.columns(3)
-
-
-with col1:
-
-    fig = create_line_chart(
-        daily_chart,
-        "total_revenue",
-        "Chiffre d'affaires",
-        ",.0f"
+    labels = (
+        alt.Chart(top)
+        .mark_text(
+            align="left",
+            baseline="middle",
+            dx=4,
+            fontSize=9,
+            color="#374151",
+        )
+        .encode(
+            y=alt.Y(
+                "seller_id:N",
+                sort="-x",
+            ),
+            x=alt.X("revenue:Q"),
+            text=alt.Text(
+                "revenue:Q",
+                format=",.0f",
+            ),
+        )
     )
 
-    st.plotly_chart(
-        fig,
+    chart = (
+        (bars + labels)
+        .properties(
+            height=145,
+        )
+        .configure_view(strokeOpacity=0)
+        .configure_axis(gridColor="#e5eaf2")
+    )
+
+    st.altair_chart(
+        chart,
         use_container_width=True,
-        config={
-            "displayModeBar": False
-        }
     )
 
-
-with col2:
-
-    fig = create_line_chart(
-        daily_chart,
-        "total_orders",
-        "Commandes",
-        ",.0f"
-    )
-
-    st.plotly_chart(
-        fig,
-        use_container_width=True,
-        config={
-            "displayModeBar": False
-        }
-    )
-
-
-with col3:
-
-    fig = create_line_chart(
-        daily_chart,
-        "total_commission",
-        "Commissions",
-        ",.0f"
-    )
-
-    st.plotly_chart(
-        fig,
-        use_container_width=True,
-        config={
-            "displayModeBar": False
-        }
-    )
-
-
-# ============================================================
-# TOP SELLERS
-# ============================================================
-
-st.divider()
-
-st.markdown(
-    '<div class="section-title">Top vendeurs</div>',
-    unsafe_allow_html=True
-)
-
-
-top_sellers = (
-    filtered_sellers
-    .groupby(
-        ["seller_id", "seller_name"],
-        as_index=False
-    )
-    ["revenue"]
-    .sum()
-    .sort_values(
-        "revenue",
-        ascending=False
-    )
-    .head(10)
-)
-
-
-col1, col2 = st.columns(
-    [1.5, 1]
-)
-
-
-with col1:
-
-    fig = px.bar(
-        top_sellers,
-        x="revenue",
-        y="seller_name",
-        orientation="h"
-    )
-
-    fig.update_layout(
-        height=350,
-
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-
-        font=dict(
-            family="Arial",
-            color=DARK
-        ),
-
-        margin=dict(
-            l=10,
-            r=10,
-            t=10,
-            b=10
-        ),
-
-        xaxis=dict(
-            title=None,
-            showgrid=True,
-            gridcolor="#EAECEF"
-        ),
-
-        yaxis=dict(
-            title=None,
-            categoryorder="total ascending"
-        ),
-
-        showlegend=False
-    )
-
-    st.plotly_chart(
-        fig,
-        use_container_width=True,
-        config={
-            "displayModeBar": False
-        }
-    )
-
-
-with col2:
-
-    display_sellers = top_sellers.copy()
-
-    display_sellers["revenue"] = (
-        display_sellers["revenue"]
-        .round(2)
-    )
-
-    display_sellers = display_sellers[
-        [
-            "seller_name",
-            "revenue"
-        ]
-    ]
-
-    display_sellers.columns = [
-        "Vendeur",
-        "CA (€)"
-    ]
-
-    st.dataframe(
-        display_sellers,
-        use_container_width=True,
-        hide_index=True,
-        height=350
-    )
-
-
-# ============================================================
-# CATEGORY ANALYSIS
-# ============================================================
-
-st.divider()
-
-st.markdown(
-    '<div class="section-title">Performance par catégorie</div>',
-    unsafe_allow_html=True
-)
-
-
-category_summary = (
-    filtered_categories
-    .groupby(
-        "category",
-        as_index=False
-    )
-    ["revenue"]
-    .sum()
-    .sort_values(
-        "revenue",
-        ascending=False
-    )
-)
-
-
-col1, col2 = st.columns(
-    [1.5, 1]
-)
-
-
-with col1:
-
-    fig = px.bar(
-        category_summary,
-        x="revenue",
-        y="category",
-        orientation="h"
-    )
-
-    fig.update_layout(
-        height=300,
-
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-
-        font=dict(
-            family="Arial",
-            color=DARK
-        ),
-
-        margin=dict(
-            l=10,
-            r=10,
-            t=10,
-            b=10
-        ),
-
-        xaxis=dict(
-            title=None,
-            showgrid=True,
-            gridcolor="#EAECEF"
-        ),
-
-        yaxis=dict(
-            title=None,
-            categoryorder="total ascending"
-        ),
-
-        showlegend=False
-    )
-
-    st.plotly_chart(
-        fig,
-        use_container_width=True,
-        config={
-            "displayModeBar": False
-        }
-    )
-
-
-with col2:
-
-    category_display = category_summary.copy()
-
-    category_display["revenue"] = (
-        category_display["revenue"]
-        .round(2)
-    )
-
-    category_display.columns = [
-        "Catégorie",
-        "CA (€)"
-    ]
-
-    st.dataframe(
-        category_display,
-        use_container_width=True,
-        hide_index=True,
-        height=300
-    )
-
-
-# ============================================================
-# SELLER PERFORMANCE
-# ============================================================
-
-st.divider()
-
-st.markdown(
-    '<div class="section-title">Performance des vendeurs</div>',
-    unsafe_allow_html=True
-)
-
-
-seller_display = filtered_sellers.copy()
-
-
-seller_display["revenue"] = (
-    seller_display["revenue"]
-    .round(2)
-)
-
-
-seller_display["average_order_value"] = (
-    seller_display["average_order_value"]
-    .round(2)
-)
-
-
-seller_display = seller_display[
+tab_overview, tab_sales, tab_sellers, tab_anomalies, tab_stats = st.tabs(
     [
-        "seller_name",
-        "order_date",
-        "total_orders",
-        "revenue",
-        "average_order_value",
-        "rank"
+        "📊 Vue générale",
+        "📈 Ventes",
+        "👤 Vendeurs",
+        "🚨 Anomalies",
+        "📐 Statistiques",
     ]
-]
-
-
-seller_display.columns = [
-    "Vendeur",
-    "Date",
-    "Commandes",
-    "CA (€)",
-    "Panier moyen (€)",
-    "Rang"
-]
-
-
-seller_display = seller_display.sort_values(
-    ["Date", "CA (€)"],
-    ascending=[False, False]
 )
 
+with tab_overview:
+    top_left, top_right = st.columns(2)
 
-st.dataframe(
-    seller_display,
-    use_container_width=True,
-    hide_index=True,
-    height=350
-)
+    with top_left:
+        line_chart(
+            daily,
+            "dt",
+            "revenue",
+            "Évolution du chiffre d'affaires",
+            "CA (€)",
+        )
 
+    with top_right:
+        line_chart(
+            daily,
+            "dt",
+            "total_orders",
+            "Évolution des commandes",
+            "Commandes",
+        )
 
-# ============================================================
-# ANOMALIES
-# ============================================================
+    st.markdown("<div style='height:0.60rem'></div>", unsafe_allow_html=True)
 
-st.divider()
+    bottom_1, bottom_2, bottom_3 = st.columns(3)
 
-st.markdown(
-    '<div class="section-title">Anomalies détectées</div>',
-    unsafe_allow_html=True
-)
+    with bottom_1:
+        st.markdown(
+            '<div class="lower-chart-title">CA par catégorie</div>',
+            unsafe_allow_html=True,
+        )
+        donut_chart(
+            category_df,
+            "category",
+            "revenue",
+            "CA par catégorie",
+        )
 
+    with bottom_2:
+        st.markdown(
+            '<div class="lower-chart-title">Top 5 vendeurs par CA</div>',
+            unsafe_allow_html=True,
+        )
+        seller_bar_chart(seller_df)
 
-if filtered_anomalies.empty:
+    with bottom_3:
+        st.markdown(
+            '<div class="lower-chart-title">Répartition des commandes</div>',
+            unsafe_allow_html=True,
+        )
+        donut_chart(
+            status_df,
+            "status_group",
+            "orders",
+            "Répartition des commandes",
+        )
 
     st.markdown(
-        """
-        <div class="success-card">
-            ✓ Aucune anomalie détectée sur la période sélectionnée.
+        f'''
+        <div class="dashboard-footer">
+            Période sélectionnée :
+            <strong>{start_date.strftime("%d/%m/%Y")}</strong>
+            →
+            <strong>{end_date.strftime("%d/%m/%Y")}</strong>
         </div>
-        """,
-        unsafe_allow_html=True
+        ''',
+        unsafe_allow_html=True,
     )
 
-else:
+with tab_sales:
+    st.subheader("Analyse des ventes")
 
-    st.markdown(
-        f"""
-        <div class="warning-card">
-            ⚠ {len(filtered_anomalies)}
-            anomalie(s) détectée(s) sur la période sélectionnée.
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    col1, col2 = st.columns(2)
 
-    anomaly_display = filtered_anomalies.copy()
+    with col1:
+        line_chart(
+            daily,
+            "dt",
+            "revenue",
+            "Chiffre d'affaires quotidien",
+            "CA (€)",
+        )
 
+    with col2:
+        line_chart(
+            daily,
+            "dt",
+            "total_orders",
+            "Commandes quotidiennes",
+            "Commandes",
+        )
 
-    anomaly_display["value"] = (
-        anomaly_display["value"]
-        .round(2)
-    )
+    if not kpi_monthly.empty:
+        st.markdown("#### Évolution mensuelle — Gold")
 
+        monthly = kpi_monthly.copy()
+        monthly["total_revenue"] = pd.to_numeric(
+            monthly["total_revenue"], errors="coerce"
+        )
+        monthly["month_date"] = pd.to_datetime(
+            monthly["year_month"] + "-01",
+            errors="coerce",
+        )
 
-    anomaly_display["expected_value"] = (
-        anomaly_display["expected_value"]
-        .round(2)
-    )
+        monthly_chart = (
+            alt.Chart(monthly)
+            .mark_line(point=True, strokeWidth=2.2, color="#1474d4")
+            .encode(
+                x=alt.X(
+                    "month_date:T",
+                    title=None,
+                    axis=alt.Axis(format="%b %Y", labelAngle=0),
+                ),
+                y=alt.Y("total_revenue:Q", title="CA (€)"),
+                tooltip=[
+                    alt.Tooltip("year_month:N", title="Mois"),
+                    alt.Tooltip(
+                        "total_revenue:Q",
+                        title="CA",
+                        format=",.2f",
+                    ),
+                ],
+            )
+            .properties(height=165)
+            .configure_view(strokeOpacity=0)
+            .configure_axis(gridColor="#e5eaf2")
+        )
 
+        st.altair_chart(monthly_chart, use_container_width=True)
 
-    anomaly_display["threshold"] = (
-        anomaly_display["threshold"]
-        .round(2)
-    )
-
-
-    anomaly_display = anomaly_display[
-        [
-            "order_date",
-            "metric",
-            "value",
-            "expected_value",
-            "threshold",
-            "anomaly_type"
-        ]
-    ]
-
-
-    anomaly_display.columns = [
-        "Date",
-        "Métrique",
-        "Valeur",
-        "Valeur attendue",
-        "Seuil",
-        "Type"
-    ]
-
+    st.markdown("#### Synthèse des transactions")
+    display = filtered.sort_values("invoice_date", ascending=False).copy()
 
     st.dataframe(
-        anomaly_display,
+        display.head(500),
         use_container_width=True,
-        hide_index=True
+        hide_index=True,
+        height=235,
     )
 
+with tab_sellers:
+    st.subheader("Analyse des vendeurs")
 
-# ============================================================
-# FOOTER
-# ============================================================
+    if seller_df.empty:
+        st.info("Aucune donnée vendeur disponible.")
+    else:
+        seller_view = seller_df.copy()
+        seller_view["average_order_value"] = (
+            seller_view["revenue"]
+            / seller_view["orders"].replace(0, pd.NA)
+        )
 
-st.divider()
+        col1, col2 = st.columns(2)
 
-st.caption(
-    "Marketplace Analytics — Groupe 11 | "
-    "Architecture Bronze → Silver → Gold"
-)
+        with col1:
+            seller_bar_chart(seller_view)
+
+        with col2:
+            st.markdown("#### Classement")
+
+            display_sellers = seller_view.head(10).copy()
+            display_sellers["revenue"] = display_sellers["revenue"].round(2)
+            display_sellers["average_order_value"] = (
+                display_sellers["average_order_value"].round(2)
+            )
+
+            st.dataframe(
+                display_sellers,
+                use_container_width=True,
+                hide_index=True,
+                height=250,
+            )
+
+    if not kpi_country.empty:
+        st.markdown("#### Performance clients par pays")
+        country_display = kpi_country.copy()
+        country_display["total_revenue"] = pd.to_numeric(
+            country_display["total_revenue"],
+            errors="coerce",
+        ).round(2)
+
+        st.dataframe(
+            country_display,
+            use_container_width=True,
+            hide_index=True,
+            height=215,
+        )
+
+with tab_anomalies:
+    st.subheader("Anomalies détectées")
+
+    if anomalies.empty:
+        st.success("Aucune anomalie détectée dans gold.customer_anomalies.")
+    else:
+        anomaly_display = anomalies.copy()
+        anomaly_display["detected_at"] = pd.to_datetime(
+            anomaly_display["detected_at"],
+            errors="coerce",
+        )
+
+        if "customer_id" in filtered.columns:
+            selected_customers = (
+                filtered["customer_id"]
+                .dropna()
+                .astype(str)
+                .unique()
+            )
+            period_anomalies = anomaly_display[
+                anomaly_display["customer_id"]
+                .astype(str)
+                .isin(selected_customers)
+            ].copy()
+        else:
+            period_anomalies = anomaly_display.copy()
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Anomalies", len(period_anomalies))
+        col2.metric(
+            "Clients concernés",
+            period_anomalies["customer_id"].nunique(),
+        )
+        col3.metric(
+            "Types d'anomalies",
+            period_anomalies["anomaly_type"].nunique(),
+        )
+
+        if "metric_value" in period_anomalies.columns:
+            period_anomalies["metric_value"] = pd.to_numeric(
+                period_anomalies["metric_value"],
+                errors="coerce",
+            ).round(2)
+
+        if "threshold_value" in period_anomalies.columns:
+            period_anomalies["threshold_value"] = pd.to_numeric(
+                period_anomalies["threshold_value"],
+                errors="coerce",
+            ).round(2)
+
+        st.dataframe(
+            period_anomalies,
+            use_container_width=True,
+            hide_index=True,
+            height=270,
+        )
+
+with tab_stats:
+    st.subheader("Analyse statistique avec R")
+
+    if model_metrics.empty and model_coefficients.empty:
+        st.info("Aucun résultat statistique disponible dans la Gold.")
+    else:
+        if not model_metrics.empty:
+            metrics = model_metrics.copy()
+            metrics["metric_value"] = pd.to_numeric(
+                metrics["metric_value"],
+                errors="coerce",
+            )
+
+            latest_run = metrics["run_date"].max()
+            latest_metrics = metrics[metrics["run_date"] == latest_run]
+
+            st.markdown(f"Résultats du **{latest_run}**")
+
+            st.dataframe(
+                latest_metrics,
+                use_container_width=True,
+                hide_index=True,
+                height=250,
+            )
+
+            def metric_value(name, decimals=3):
+                subset = latest_metrics[
+                    latest_metrics["metric_name"]
+                    .astype(str)
+                    .str.lower()
+                    == name.lower()
+                ]
+
+                if subset.empty:
+                    return "—"
+
+                value = subset.iloc[0]["metric_value"]
+
+                if pd.isna(value):
+                    return "—"
+
+                return f"{value:.{decimals}f}"
+
+            col1, col2, col3 = st.columns(3)
+            col1.metric("AUC", metric_value("auc", 3))
+            col2.metric("R²", metric_value("r_squared", 3))
+            col3.metric("RMSE", metric_value("rmse", 2))
+
+        if not model_coefficients.empty:
+            st.markdown("#### Coefficients des modèles")
+
+            coeffs = model_coefficients.copy()
+            latest_coeff_run = coeffs["run_date"].max()
+            coeffs = coeffs[coeffs["run_date"] == latest_coeff_run]
+
+            st.dataframe(
+                coeffs,
+                use_container_width=True,
+                hide_index=True,
+                height=300,
+            )

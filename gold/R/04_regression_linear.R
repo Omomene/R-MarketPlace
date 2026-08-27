@@ -11,11 +11,42 @@ library(ggplot2)
 run_linear_regression <- function(customers, output_dir = "output") {
   model_name <- "linear_total_spend"
 
-  fit <- lm(
-    total_spend ~ purchase_frequency + avg_order_value + unique_products +
-      recency + tenure + country + total_quantity,
-    data = customers
+  # Vérifier si Country possède au moins 2 modalités
+has_country_variation <- (
+  "country" %in% names(customers) &&
+  length(unique(na.omit(customers$country))) >= 2
+)
+
+if (has_country_variation) {
+
+  formula_linear <- total_spend ~
+    purchase_frequency +
+    avg_order_value +
+    unique_products +
+    recency +
+    tenure +
+    country +
+    total_quantity
+
+} else {
+
+  warning(
+    "Country exclu de la regression lineaire : moins de 2 modalites."
   )
+
+  formula_linear <- total_spend ~
+    purchase_frequency +
+    avg_order_value +
+    unique_products +
+    recency +
+    tenure +
+    total_quantity
+}
+
+fit <- lm(
+  formula_linear,
+  data = customers
+)
 
   predictions <- predict(fit, customers)
   rmse <- sqrt(mean((customers$total_spend - predictions)^2, na.rm = TRUE))

@@ -19,12 +19,40 @@ run_logistic_regression <- function(customers, output_dir = "output", seed = 42,
   train_data <- customers[train_idx, ]
   test_data <- customers[-train_idx, ]
 
-  fit <- glm(
-    high_value_customer ~ purchase_frequency + recency + tenure +
-      unique_products + avg_quantity_per_order + country,
-    data = train_data,
-    family = binomial(link = "logit")
+  has_country_variation <- (
+  "country" %in% names(train_data) &&
+  length(unique(na.omit(train_data$country))) >= 2
+)
+
+if (has_country_variation) {
+
+  formula_logistic <- high_value_customer ~
+    purchase_frequency +
+    recency +
+    tenure +
+    unique_products +
+    avg_quantity_per_order +
+    country
+
+} else {
+
+  warning(
+    "Country exclu de la regression logistique : moins de 2 modalites."
   )
+
+  formula_logistic <- high_value_customer ~
+    purchase_frequency +
+    recency +
+    tenure +
+    unique_products +
+    avg_quantity_per_order
+}
+
+fit <- glm(
+  formula_logistic,
+  data = train_data,
+  family = binomial(link = "logit")
+)
 
   coefficients_df <- broom::tidy(fit) %>%
     transmute(
@@ -54,8 +82,28 @@ run_logistic_regression <- function(customers, output_dir = "output", seed = 42,
   sensitivity <- ifelse((tp + fn) > 0, tp / (tp + fn), NA_real_)
   specificity <- ifelse((tn + fp) > 0, tn / (tn + fp), NA_real_)
 
-  roc_obj <- pROC::roc(actual, test_probs, quiet = TRUE)
-  auc_value <- as.numeric(pROC::auc(roc_obj))
+  if (length(unique(actual)) < 2) {
+
+  warning(
+    "AUC non calculable : le jeu de test ne contient qu'une seule classe."
+  )
+
+  auc_value <- NA_real_
+
+} else {
+
+  roc_obj <- pROC::roc(
+    actual,
+    test_probs,
+    quiet = TRUE
+  )
+
+  auc_value <- as.numeric(
+    pROC::auc(roc_obj)
+  )
+
+}
+  
 
   metrics_df <- tibble::tibble(
     model_name   = model_name,
@@ -65,9 +113,24 @@ run_logistic_regression <- function(customers, output_dir = "output", seed = 42,
   )
 
   dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
-  png(file.path(output_dir, "10_logistic_roc_curve.png"), width = 800, height = 600)
-  plot(roc_obj, main = "Courbe ROC - HighValueCustomer")
+  if (length(unique(actual)) >= 2) {
+
+  png(
+    file.path(
+      output_dir,
+      "10_logistic_roc_curve.png"
+    ),
+    width = 800,
+    height = 600
+  )
+
+  plot(
+    roc_obj,
+    main = "Courbe ROC - HighValueCustomer"
+  )
+
   dev.off()
+}
 
   list(model = fit, coefficients = coefficients_df, metrics = metrics_df, confusion_matrix = confusion)
 }
