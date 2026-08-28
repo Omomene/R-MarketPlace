@@ -1,4 +1,4 @@
-# 🛒 R-MarketPlace — Pipeline Data & Analytics
+# R-MarketPlace — Pipeline Data & Analytics
 
 Projet de pipeline Data complet réalisé autour d'une marketplace e-commerce.
 
@@ -14,7 +14,7 @@ L'objectif est de construire une architecture permettant de :
 
 ---
 
-## 🏗️ Architecture du projet
+## Architecture du projet
 
 Le pipeline suit l'architecture suivante :
 
@@ -54,7 +54,7 @@ API → Airflow → MinIO → R → PostgreSQL Silver → Gold → Streamlit
 
 ---
 
-## 📁 Structure du projet
+## Structure du projet
 
 ```text
 R-MarketPlace/
@@ -110,7 +110,7 @@ R-MarketPlace/
 
 ---
 
-# 🔄 Pipeline de données
+# Pipeline de données
 
 ## 1. Marketplace API
 
@@ -269,7 +269,7 @@ gold.model_metrics
 
 ---
 
-# 📊 Dashboard Streamlit
+# Dashboard Streamlit
 
 Le dashboard Streamlit constitue la couche de visualisation du projet.
 
@@ -319,7 +319,7 @@ http://localhost:8501
 
 ---
 
-# 🐳 Lancement du projet
+# Lancement du projet
 
 ## Prérequis
 
@@ -378,7 +378,7 @@ docker compose ps
 
 ---
 
-# 🗄️ PostgreSQL
+# PostgreSQL
 
 La base utilisée est :
 
@@ -407,7 +407,7 @@ http://localhost:8081
 
 ---
 
-# 🧪 Exécution de la couche Gold
+# Exécution de la couche Gold
 
 Construire l'image :
 
@@ -436,7 +436,7 @@ Pipeline Gold termine avec succes.
 
 ---
 
-# 📅 Chargement historique
+#  Chargement historique
 
 Le pipeline Airflow peut être exécuté sur plusieurs dates afin de construire un historique des commandes.
 
@@ -450,7 +450,7 @@ Les données Silver permettent ensuite de suivre l'évolution quotidienne et men
 
 ---
 
-# 🛠️ Technologies utilisées
+#  Technologies utilisées
 
 | Technologie | Utilisation |
 |---|---|
@@ -468,7 +468,7 @@ Les données Silver permettent ensuite de suivre l'évolution quotidienne et men
 
 ---
 
-# 🌐 Services
+#  Services
 
 | Service | Adresse |
 |---|---|
@@ -482,7 +482,7 @@ Les données Silver permettent ensuite de suivre l'évolution quotidienne et men
 
 ---
 
-# 🎯 Objectif pédagogique
+#  Objectif pédagogique
 
 Ce projet met en œuvre un pipeline Data de bout en bout combinant :
 
@@ -512,7 +512,7 @@ Il illustre notamment :
 
 ---
 
-## 👥 Projet
+##  Projet
 
 **R-MarketPlace — Groupe 11**
 
