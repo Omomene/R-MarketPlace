@@ -16,19 +16,51 @@ gold_db_connect <- function() {
 
 #' Remplace integralement le contenu d'une table gold par un data.frame,
 #' dans une transaction (pattern idempotent : DELETE run courant + INSERT).
-gold_write_table <- function(con, schema, table, df, run_date_col = "run_date") {
+gold_write_table <- function(
+    con,
+    schema,
+    table,
+    df,
+    run_date_col = "run_date",
+    replace_all = FALSE
+) {
   full_name <- DBI::Id(schema = schema, table = table)
 
   dbWithTransaction(con, {
-    if (!is.null(run_date_col) && run_date_col %in% names(df) && nrow(df) > 0) {
+
+    if (replace_all) {
+
+      dbExecute(
+        con,
+        sprintf("TRUNCATE TABLE %s.%s", schema, table)
+      )
+
+    } else if (
+      !is.null(run_date_col) &&
+      run_date_col %in% names(df) &&
+      nrow(df) > 0
+    ) {
+
       run_dates <- unique(df[[run_date_col]])
       placeholders <- paste(sprintf("'%s'", run_dates), collapse = ", ")
-      dbExecute(con, sprintf(
-        "DELETE FROM %s.%s WHERE %s IN (%s)",
-        schema, table, run_date_col, placeholders
-      ))
+
+      dbExecute(
+        con,
+        sprintf(
+          "DELETE FROM %s.%s WHERE %s IN (%s)",
+          schema,
+          table,
+          run_date_col,
+          placeholders
+        )
+      )
+
     } else {
-      dbExecute(con, sprintf("TRUNCATE TABLE %s.%s", schema, table))
+
+      dbExecute(
+        con,
+        sprintf("TRUNCATE TABLE %s.%s", schema, table)
+      )
     }
 
     if (nrow(df) > 0) {

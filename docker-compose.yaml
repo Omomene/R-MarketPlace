@@ -138,6 +138,12 @@ services:
       AIRFLOW_UID: ${AIRFLOW_UID}
       AIRFLOW_GID: ${AIRFLOW_GID}
 
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: ${POSTGRES_DB}
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+
       PYTHONPATH: /opt/airflow/plugins:/opt/airflow/dags
 
       # PostgreSQL
@@ -170,6 +176,7 @@ services:
       - ./airflow/plugins:/opt/airflow/plugins
       - airflow_logs:/opt/airflow/logs
       - ./r:/opt/airflow/r
+      - ./gold:/opt/airflow/gold
 
     command: standalone
 

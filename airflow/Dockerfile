@@ -32,6 +32,8 @@ RUN R -e "install.packages(c( \
     'ggplot2', \
     'readr', \
     'aws.s3', \
+    'broom',\
+    'pROC', \
     'slider' \
     ), repos='https://cloud.r-project.org')"
 

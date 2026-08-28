@@ -200,11 +200,11 @@ with DAG(
     # --------------------------------------
 
     analysis = BashOperator(
-        task_id="r_analysis",
-        bash_command=(
-            "Rscript /opt/airflow/r/analysis.R "
-            "{{ ds }}"
-        )
+    task_id="r_analysis_gold",
+    bash_command=(
+        "cd /opt/airflow/gold && "
+        "Rscript R/run_pipeline.R {{ ds }}"
+    )
     )
 
     # --------------------------------------

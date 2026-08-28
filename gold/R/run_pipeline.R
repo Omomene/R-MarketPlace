@@ -60,15 +60,17 @@ gold_write_table(
   con,
   "gold",
   "kpi_country",
-  seller_country_kpi
+  seller_country_kpi,
+  replace_all = TRUE
 )
 
-  gold_write_table(
-    con,
-    "gold",
-    "kpi_monthly",
-    build_kpi_monthly(transactions)
-  )
+gold_write_table(
+con,
+"gold",
+"kpi_monthly",
+build_kpi_monthly(transactions),
+replace_all = TRUE
+)
 
 
   # ==========================================================
