@@ -277,6 +277,8 @@ Il se connecte directement aux couches Silver et Gold de PostgreSQL.
 
 L'application propose plusieurs vues analytiques.
 
+![alt text](<test/dashboard.png>)
+
 ### Vue générale
 
 Présentation synthétique des performances de la marketplace :
