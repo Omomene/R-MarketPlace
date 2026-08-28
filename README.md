@@ -1,5 +1,14 @@
 # R-MarketPlace — Pipeline Data & Analytics
 
+## Membres du groupe
+- Omomene IWELOMEN — Docker / Airflow / orchestration 
+- Hajar BEROUAG —  API / génération de données
+- Ameto Cornelia ADANTO — R / SQL / modélisation et nettoyage
+- Abraham MVOGO — R / SQL / modélisation et analyse
+- Oumou SOW — Streamlit / KPI / visualisation
+
+Dépôt GitHub : https://github.com/Omomene/R-MarketPlace.git
+
 Projet de pipeline Data complet réalisé autour d'une marketplace e-commerce.
 
 L'objectif est de construire une architecture permettant de :
@@ -13,6 +22,7 @@ L'objectif est de construire une architecture permettant de :
 - visualiser les résultats dans un dashboard Streamlit.
 
 ---
+![Dashboard Streamlit](tests/dashboard.png)
 
 ## Architecture du projet
 
@@ -131,6 +141,9 @@ http://localhost:5000
 
 ---
 
+
+![Dashboard Streamlit](tests/image.png)
+
 ## 2. Orchestration avec Apache Airflow
 
 Apache Airflow orchestre le pipeline de données.
@@ -160,6 +173,7 @@ http://localhost:8080
 ```
 
 ---
+![Dashboard Streamlit](tests/minio.png)
 
 ## 3. Bronze — MinIO
 
@@ -268,6 +282,7 @@ gold.model_metrics
 ```
 
 ---
+![Dashboard Streamlit](tests/dashboard.png)
 
 # Dashboard Streamlit
 
@@ -277,7 +292,6 @@ Il se connecte directement aux couches Silver et Gold de PostgreSQL.
 
 L'application propose plusieurs vues analytiques.
 
-![alt text](<test/dashboard.png>)
 
 ### Vue générale
 
